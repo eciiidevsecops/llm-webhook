@@ -4,6 +4,10 @@ on:
   push:
     branches: ["main"]
 
+permissions:
+  contents: write      # allow git commits/push
+  packages: write      # allow pushing to GHCR
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -15,10 +19,9 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_PAT }}
+          password: ${{ secrets.GHCR_PAT }} # PAT with repo & write:packages scopes
 
       - name: Set dynamic tags
-        id: vars
         run: |
           echo "sha_tag=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_ENV
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
@@ -27,21 +30,26 @@ jobs:
             echo "version_tag=dev" >> $GITHUB_ENV
           fi
 
-      - name: Build and Push
+      - name: Build and Push Docker images
         run: |
-          IMAGE_BASE=ghcr.io/${{ github.repository }}/grafana-llm-webhook
+          IMAGE_BASE=ghcr.io/eciiidevsecops/llm-webhook/grafana-llm-webhook
           docker build -t $IMAGE_BASE:latest \
-                       -t $IMAGE_BASE:${{ env.sha_tag }} \
-                       -t $IMAGE_BASE:${{ env.version_tag }} .
+                       -t $IMAGE_BASE:${sha_tag} \
+                       -t $IMAGE_BASE:${version_tag} .
           docker push $IMAGE_BASE:latest
-          docker push $IMAGE_BASE:${{ env.sha_tag }}
-          docker push $IMAGE_BASE:${{ env.version_tag }}
+          docker push $IMAGE_BASE:${sha_tag}
+          docker push $IMAGE_BASE:${version_tag}
+        env:
+          sha_tag: ${{ env.sha_tag }}
+          version_tag: ${{ env.version_tag }}
 
-      - name: Update deployment.yaml with new tag
+      - name: Update deployment.yaml with new tag and push change
         run: |
-          sed -i "s|ghcr.io.*/grafana-llm-webhook:.*|ghcr.io/${{ github.repository }}/grafana-llm-webhook:${{ env.sha_tag }}|" k8s/deployment.yaml
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
+          sed -i "s|ghcr.io.*/grafana-llm-webhook:.*|ghcr.io/eciiidevsecops/llm-webhook/grafana-llm-webhook:${sha_tag}|" k8s/deployment.yaml
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add k8s/deployment.yaml
-          git commit -m "chore: update image tag to ${{ env.sha_tag }}"
-          git push
+          git commit -m "chore: update image tag to ${sha_tag}" || echo "No changes to commit"
+          git push https://${{ github.actor }}:${{ secrets.GHCR_PAT }}@github.com/eciiidevsecops/llm-webhook.git
+        env:
+          sha_tag: ${{ env.sha_tag }}
