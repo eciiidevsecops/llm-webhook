@@ -19,7 +19,7 @@ spec:
       containers:
         - name: webhook
           # This line will be automatically updated by GitHub Actions
-          image: ghcr.io/eciiidevsecops/llm-webhook/grafana-llm-webhook:306d2c0
+          image: ghcr.io/eciiidevsecops/llm-webhook/grafana-llm-webhook:2a44ad3
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8000
