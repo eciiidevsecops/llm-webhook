@@ -1,1 +1,47 @@
+name: CI/CD to GHCR
 
+on:
+  push:
+    branches: ["main"]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set dynamic tags
+        id: vars
+        run: |
+          echo "sha_tag=$(echo $GITHUB_SHA | cut -c1-7)" >> $GITHUB_ENV
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "version_tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_ENV
+          else
+            echo "version_tag=dev" >> $GITHUB_ENV
+          fi
+
+      - name: Build and Push
+        run: |
+          IMAGE_BASE=ghcr.io/${{ github.repository }}/grafana-llm-webhook
+          docker build -t $IMAGE_BASE:latest \
+                       -t $IMAGE_BASE:${{ env.sha_tag }} \
+                       -t $IMAGE_BASE:${{ env.version_tag }} .
+          docker push $IMAGE_BASE:latest
+          docker push $IMAGE_BASE:${{ env.sha_tag }}
+          docker push $IMAGE_BASE:${{ env.version_tag }}
+
+      - name: Update deployment.yaml with new tag
+        run: |
+          sed -i "s|ghcr.io.*/grafana-llm-webhook:.*|ghcr.io/${{ github.repository }}/grafana-llm-webhook:${{ env.sha_tag }}|" k8s/deployment.yaml
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add k8s/deployment.yaml
+          git commit -m "chore: update image tag to ${{ env.sha_tag }}"
+          git push
